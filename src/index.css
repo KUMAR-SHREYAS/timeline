@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: Ensure the root fills the screen */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background-color: #0a0a0a; /* neutral-950 */
+}

@@ -1,0 +1,26 @@
+.font-hand {
+  font-family: "Indie Flower", cursive;
+}
+
+.parchment-box {
+  background: #f2e8cf;
+  padding: 14px;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.25);
+  max-width: 220px;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale {
+  animation: scaleIn .2s ease-out;
+}
