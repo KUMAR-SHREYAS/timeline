@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from "react";
+import React, { useState, useRef, useMemo, useEffect, useLayoutEffect } from "react";
 
 /* =========================================
    1. HELPER FUNCTIONS & MATH
@@ -37,8 +37,165 @@ const processImageUrl = (url) => {
    2. SUB-COMPONENTS
    ========================================= */
 
+// --- Confetti Component (Optimized with Offscreen Canvas) ---
+function Confetti({ run }) {
+  const canvasRef = useRef(null);
+  // Keep component mounted during fade-out animation
+  const [shouldRender, setShouldRender] = useState(run);
+
+  useEffect(() => {
+    if (run) {
+      setShouldRender(true);
+    } else {
+      // Wait for 1.5s fade out before unmounting to save resources
+      const timer = setTimeout(() => setShouldRender(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [run]);
+  
+  useEffect(() => {
+    if (!shouldRender) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d", { alpha: true }); // Optimize for transparency
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let animationId;
+    
+    // Dynamic density calculation - safer limit
+    // width * height / 15000 gives good density without overloading
+    let maxParticles = Math.floor((width * height) / 15000); 
+    maxParticles = Math.max(50, Math.min(maxParticles, 300)); // Cap at 300 for performance
+
+    const resize = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      
+      maxParticles = Math.floor((width * height) / 15000);
+      maxParticles = Math.max(50, Math.min(maxParticles, 300));
+    };
+    
+    // Initial resize
+    resize();
+    window.addEventListener("resize", resize);
+
+    // 1. PRE-RENDER EMOJIS TO OFFSCREEN CANVASES
+    // Drawing text on canvas every frame is slow. Drawing images is fast.
+    const shapes = ["❤️", "💖", "💕", "💞", "🌹", "✨", "🌸", 
+      "🤍", "😍", "🥰", "💌","🩷","❤️","🧡","💛","💚","💚",
+      "🩵","💙","💜","🖤","🩶","🤍","🤎","❤️‍🔥","❣️","💕","💞",
+      "💓","💗","💖","💘","💘","💝","💟","🧣","👩‍❤️‍👨","👫","👠",
+      "💍","💋","💄","👄","🫦","💃🏻","🕺","☺️","😊","😍","🥰","😘"
+    ];
+    const shapeCache = {};
+    const cacheSize = 50; // Resolution of cached emoji
+
+    shapes.forEach(shape => {
+        const pCanvas = document.createElement('canvas');
+        pCanvas.width = cacheSize;
+        pCanvas.height = cacheSize;
+        const pCtx = pCanvas.getContext('2d');
+        pCtx.font = `${cacheSize - 10}px serif`;
+        pCtx.textAlign = "center";
+        pCtx.textBaseline = "middle";
+        pCtx.fillText(shape, cacheSize / 2, cacheSize / 2);
+        shapeCache[shape] = pCanvas;
+    });
+
+    const particles = [];
+
+    function createParticle() {
+      return {
+        x: Math.random() * width,
+        y: Math.random() * -50 - 20, 
+        size: Math.random() * 20 + 15, 
+        shape: shapes[Math.floor(Math.random() * shapes.length)], // Store shape key
+        speedY: Math.random() * 1.5 + 0.5, 
+        speedX: Math.random() * 1 - 0.5,   
+        swaySpeed: Math.random() * 0.02 + 0.01, 
+        swayOffset: Math.random() * Math.PI * 2,
+        rotation: Math.random() * 360,
+        rotationSpeed: (Math.random() * 2 - 1) * 0.5 
+      };
+    }
+
+    // Initial burst
+    for (let i = 0; i < maxParticles / 2; i++) {
+        const p = createParticle();
+        p.y = Math.random() * height; 
+        particles.push(p);
+    }
+
+    const loop = () => {
+      ctx.clearRect(0, 0, width, height);
+      
+      // Maintain particle count
+      if (particles.length < maxParticles) {
+        const spawnRate = particles.length < maxParticles / 2 ? 3 : 1;
+        for(let i=0; i<spawnRate; i++) {
+             if (Math.random() < 0.1) particles.push(createParticle());
+        }
+      }
+
+      particles.forEach((p, i) => {
+        p.y += p.speedY;
+        p.x += p.speedX + Math.sin(p.y * p.swaySpeed + p.swayOffset) * 0.3;
+        p.rotation += p.rotationSpeed;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        
+        // 2. USE DRAWIMAGE INSTEAD OF FILLTEXT (Much Faster)
+        const cachedImg = shapeCache[p.shape];
+        if (cachedImg) {
+            ctx.drawImage(cachedImg, -p.size/2, -p.size/2, p.size, p.size);
+        }
+        
+        ctx.restore();
+
+        if (p.y > height + 50) {
+           particles[i] = createParticle();
+        }
+      });
+
+      animationId = requestAnimationFrame(loop);
+    };
+
+    loop();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animationId);
+      // Clean up cache could be done here if needed, but JS GC handles canvas elements
+    };
+  }, [shouldRender]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100vw", 
+        height: "100vh", 
+        pointerEvents: "none",
+        zIndex: 9999,
+        opacity: run ? 1 : 0, 
+        transition: "opacity 1.5s ease-out" 
+      }}
+    />
+  );
+}
+
 // --- Music Player Component ---
-function MusicPlayer({ currentSrc, onMusicUpload }) {
+function MusicPlayer({ currentSrc, onMusicUpload, onPlayStateChange }) {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
 
@@ -46,6 +203,7 @@ function MusicPlayer({ currentSrc, onMusicUpload }) {
     if (audioRef.current) {
       audioRef.current.pause();
       setPlaying(false);
+      if (onPlayStateChange) onPlayStateChange(false); // Stop confetti on load
       if(currentSrc) {
         audioRef.current.load();
       }
@@ -54,10 +212,13 @@ function MusicPlayer({ currentSrc, onMusicUpload }) {
 
   const togglePlay = () => {
     if (!audioRef.current || !currentSrc) return;
+    
     if (playing) {
       audioRef.current.pause();
+      if (onPlayStateChange) onPlayStateChange(false);
     } else {
       audioRef.current.play();
+      if (onPlayStateChange) onPlayStateChange(true);
     }
     setPlaying(!playing);
   };
@@ -101,7 +262,10 @@ function MusicPlayer({ currentSrc, onMusicUpload }) {
       <audio
         ref={audioRef}
         src={currentSrc}
-        onEnded={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          if (onPlayStateChange) onPlayStateChange(false);
+        }}
       />
     </div>
   );
@@ -288,8 +452,9 @@ function MovingHeart({ pathStr }) {
     
     const prevPath = prevPathPropRef.current;
     
-    // Helper to measure path length
+    // Helper to measure path length safely
     const getLen = (d) => {
+      if (typeof document === 'undefined') return 0; 
       const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
       p.setAttribute("d", d);
       return p.getTotalLength();
@@ -300,7 +465,7 @@ function MovingHeart({ pathStr }) {
     // CASE 1: EXTENDING (Forward)
     if (prevPath && pathStr.startsWith(prevPath) && pathStr !== prevPath) {
        const prevLen = getLen(prevPath);
-       const startPerc = (prevLen / currentLen) * 100;
+       const startPerc = currentLen > 0 ? (prevLen / currentLen) * 100 : 0;
        
        setRenderPath(pathStr);
        setIsTransitioning(false);
@@ -316,7 +481,7 @@ function MovingHeart({ pathStr }) {
     // CASE 2: RETRACTING (Backward)
     else if (prevPath && prevPath.startsWith(pathStr) && pathStr !== prevPath) {
         const prevLen = getLen(prevPath);
-        const targetPerc = (currentLen / prevLen) * 100;
+        const targetPerc = prevLen > 0 ? (currentLen / prevLen) * 100 : 100;
 
         // Keep rendering OLD path to animate backward
         setRenderPath(prevPath);
@@ -388,7 +553,7 @@ function Heart({ x, y, active, selected }) {
         d="M12 21s-6.7-4.35-9.5-8.28C.6 9.7 2.1 6 5.6 6c2 0 3.2 1.2 3.9 2.3C10.2 7.2 11.4 6 13.4 6c3.5 0 5 3.7 3.1 6.7C18.7 16.65 12 21 12 21z"
         fill={active ? "#ec4899" : "#9ca3af"}
         className={`transition-transform duration-300 origin-center ${
-          selected ? "scale-[2.3] stroke-2 stroke-black/10" : "scale-[2.0] hover:scale-[2.15]"
+          selected ? "scale-[3.5] stroke-2 stroke-black/10" : "scale-[3.5] hover:scale-[5.5]"
         }`}
         style={{ transformBox: "fill-box", transformOrigin: "center" }}
       />
@@ -401,6 +566,12 @@ function Heart({ x, y, active, selected }) {
    ========================================= */
 
 function TimelineEditor({ initialData, onExit }) {
+  // Safe window dimensions state to avoid hydration mismatch
+  const [windowSize, setWindowSize] = useState({ 
+    width: 1200, 
+    height: 800 
+  });
+
   // Normalize nodes on init: Ensure everyone has a parentId if loading old files
   const normalizedNodes = useMemo(() => {
     let raw = initialData.nodes || [];
@@ -430,6 +601,19 @@ function TimelineEditor({ initialData, onExit }) {
   const svgRef = useRef(null);
   const [popupPlacement, setPopupPlacement] = useState({ vertical: 'top', xOffset: 0 });
 
+  // Confetti State
+  const [isConfettiActive, setIsConfettiActive] = useState(false);
+
+  // Update window size on mount
+  useEffect(() => {
+    const updateSize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+    updateSize(); // Set initial client size
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
   // Update button position for the "Main" add button (tracks last added node)
   useEffect(() => {
     if (nodes.length > 0) {
@@ -454,7 +638,7 @@ function TimelineEditor({ initialData, onExit }) {
     let xOffset = 0;
     const halfWidth = popupWidth / 2;
     const distToLeft = rect.left;
-    const distToRight = window.innerWidth - rect.right;
+    const distToRight = windowSize.width - rect.right;
 
     if (distToLeft < halfWidth) {
       xOffset = halfWidth - distToLeft + 10; 
@@ -463,7 +647,7 @@ function TimelineEditor({ initialData, onExit }) {
     }
     
     setPopupPlacement({ vertical: newVertical, xOffset });
-  }, [selectedId]); 
+  }, [selectedId, windowSize.width]); 
 
   // --- ACTIONS ---
   const saveTimeline = () => {
@@ -636,8 +820,8 @@ function TimelineEditor({ initialData, onExit }) {
   const lastNode = nodes.length > 0 ? nodes.reduce((prev, current) => (prev.y > current.y) ? prev : current) : { y: 100 };
   const rightMostNode = nodes.length > 0 ? nodes.reduce((prev, current) => (prev.x > current.x) ? prev : current) : { x: 0 };
   
-  const canvasHeight = Math.max(window.innerHeight - 100, lastNode.y + 500);
-  const canvasWidth = Math.max(window.innerWidth, rightMostNode.x + 500);
+  const canvasHeight = Math.max(windowSize.height - 100, lastNode.y + 500);
+  const canvasWidth = Math.max(windowSize.width, rightMostNode.x + 500);
 
   const selectedNode = nodes.find(n => n.id === selectedId);
   const isTimelineEmpty = nodes.length === 0;
@@ -651,6 +835,9 @@ function TimelineEditor({ initialData, onExit }) {
   return (
     <div className={`relative w-full h-screen bg-[#ffe4e1] overflow-auto ${addingMode ? 'cursor-crosshair' : 'cursor-default'}`}>
       
+      {/* --- Confetti Overlay --- */}
+      <Confetti run={isConfettiActive} />
+
       {/* --- TOP BAR (Fixed) --- */}
       <div className="fixed top-0 left-0 w-full bg-white/95 backdrop-blur-md py-4 px-10 md:px-20 lg:px-48 flex justify-between items-center z-[100] shadow-sm">
         <div className="flex-1 flex justify-start">
@@ -663,7 +850,11 @@ function TimelineEditor({ initialData, onExit }) {
         </div>
         
         <div className="flex-none">
-          <MusicPlayer currentSrc={music} onMusicUpload={setMusic} />
+          <MusicPlayer 
+            currentSrc={music} 
+            onMusicUpload={setMusic} 
+            onPlayStateChange={setIsConfettiActive} // Direct link to confetti state
+          />
         </div>
 
         <div className="flex-1 flex justify-end">
@@ -859,9 +1050,11 @@ function TimelineEditor({ initialData, onExit }) {
 export default function App() {
   const [view, setView] = useState('home');
   const [timelineData, setTimelineData] = useState([]);
+  const [editorKey, setEditorKey] = useState(0); // Stable key for resetting editor
 
   const startNew = () => {
     setTimelineData([]);
+    setEditorKey(prev => prev + 1); // Increment key to reset editor state completely
     setView('editor');
   };
 
@@ -878,6 +1071,7 @@ export default function App() {
         } else {
            setTimelineData(loadedNodes);
         }
+        setEditorKey(prev => prev + 1); // Reset editor with new data
         setView('editor');
       } catch (err) {
         alert("Error loading file. Please ensure it is a valid JSON timeline.");
@@ -887,7 +1081,7 @@ export default function App() {
   };
 
   if (view === 'editor') {
-    return <TimelineEditor key={Date.now()} initialData={timelineData} onExit={() => setView('home')} />;
+    return <TimelineEditor key={editorKey} initialData={timelineData} onExit={() => setView('home')} />;
   }
 
   return (
