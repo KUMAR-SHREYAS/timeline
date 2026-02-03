@@ -7,21 +7,18 @@ import React, { useState, useRef, useMemo, useEffect } from "react";
 // Generates the smooth S-curve SVG path
 const generateSegment = (start, end) => {
   const midY = (start.y + end.y) / 2;
-  const cp1 = `${start.x},${midY}`;
-  const cp2 = `${end.x},${midY}`;
+  // If points are very close vertically, adjust control points to avoid loops
+  const safeMidY = Math.abs(end.y - start.y) < 10 ? start.y + 20 : midY;
+  
+  const cp1 = `${start.x},${safeMidY}`;
+  const cp2 = `${end.x},${safeMidY}`;
   return `C ${cp1} ${cp2} ${end.x},${end.y}`;
-};
-
-// Calculates physical distance between points (Pythagorean)
-const getDistance = (p1, p2) => {
-  return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
 };
 
 // Helper: Process Image URL (Google Drive & Photos support)
 const processImageUrl = (url) => {
   if (!url) return "";
   
-  // 1. Handle Google Drive links
   if (url.includes("drive.google.com")) {
     const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
     if (match && match[1]) {
@@ -29,7 +26,6 @@ const processImageUrl = (url) => {
     }
   }
 
-  // 2. Handle Google Photos Shortlinks (Webpages)
   if (url.includes("photos.app.goo.gl") || url.includes("photos.google.com/share")) {
     return "https://via.placeholder.com/400x300/f2e8cf/5c4b4b?text=See+Instructions+Below";
   }
@@ -42,14 +38,22 @@ const processImageUrl = (url) => {
    ========================================= */
 
 // --- Music Player Component ---
-function MusicPlayer() {
+function MusicPlayer({ currentSrc, onMusicUpload }) {
   const audioRef = useRef(null);
-  const [src, setSrc] = useState(() => localStorage.getItem("timelineSong") || "");
   const [playing, setPlaying] = useState(false);
 
-  const togglePlay = () => {
-    if (!audioRef.current) return;
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setPlaying(false);
+      if(currentSrc) {
+        audioRef.current.load();
+      }
+    }
+  }, [currentSrc]);
 
+  const togglePlay = () => {
+    if (!audioRef.current || !currentSrc) return;
     if (playing) {
       audioRef.current.pause();
     } else {
@@ -61,17 +65,20 @@ function MusicPlayer() {
   const handleFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const url = URL.createObjectURL(file);
-    setSrc(url);
-    // Note: This URL is specific to this session and browser window
-    localStorage.setItem("timelineSong", url);
-    setPlaying(false);
+    if (file.size > 10 * 1024 * 1024) {
+        alert("Audio file is too large! Please choose a file under 10MB.");
+        return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      onMusicUpload(reader.result);
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
     <div className="flex items-center gap-3">
-      {src && (
+      {currentSrc && (
         <button
           onClick={togglePlay}
           className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-hand shadow transition flex items-center gap-2"
@@ -82,7 +89,7 @@ function MusicPlayer() {
 
       <label className="cursor-pointer bg-gray-200 hover:bg-gray-300 px-3 py-2 rounded-lg font-hand text-sm flex items-center gap-2 text-gray-700">
         <span>🎵</span>
-        <span className="hidden sm:inline">Choose Song</span>
+        <span className="hidden sm:inline">{currentSrc ? "Change Song" : "Choose Song"}</span>
         <input
           type="file"
           accept="audio/*, video/mp4"
@@ -93,7 +100,7 @@ function MusicPlayer() {
 
       <audio
         ref={audioRef}
-        src={src}
+        src={currentSrc}
         onEnded={() => setPlaying(false)}
       />
     </div>
@@ -106,7 +113,6 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
   const prevCountRef = useRef(slides.length);
   const textareaRef = useRef(null);
 
-  // Auto-switch to new slide when added
   useEffect(() => {
     if (slides.length > prevCountRef.current) {
       setCurrentIndex(prevCountRef.current);
@@ -116,7 +122,6 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
     prevCountRef.current = slides.length;
   }, [slides.length]); 
 
-  // Auto-resize textarea when text or slide changes
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -134,7 +139,6 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
     setCurrentIndex((prev) => (prev === 0 ? slides.length - 1 : prev - 1));
   };
 
-  // --- Handle Multiple File Uploads ---
   const handleMultipleUpload = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -163,9 +167,9 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
     });
   };
 
-  // Handle deletion with confirmation
   const handleDeleteClick = (e) => {
-    e.stopPropagation(); // Prevent slider from reacting
+    e.stopPropagation();
+    e.preventDefault();
     if (window.confirm("Are you sure you want to delete this picture?")) {
       onDeleteSlide(currentIndex);
     }
@@ -179,21 +183,43 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
   return (
     <div className="w-full flex flex-col items-center gap-2">
       
-      {/* 1. SLIDER CONTAINER */}
+      {/* 1. NAVIGATION ROW (Above Image) */}
+      {slides.length > 1 && (
+        <div className="w-full flex justify-between items-center px-2">
+           <button 
+              onClick={prevSlide}
+              className="bg-white hover:bg-gray-100 text-gray-800 border border-gray-300 rounded-full w-8 h-8 flex items-center justify-center transition-all font-bold shadow-sm"
+              title="Previous"
+            >
+              ❮
+            </button>
+
+            <span className="text-xs font-bold text-[#5c4b4b] font-hand">
+              {currentIndex + 1} of {slides.length}
+            </span>
+
+            <button 
+              onClick={nextSlide}
+              className="bg-white hover:bg-gray-100 text-gray-800 border border-gray-300 rounded-full w-8 h-8 flex items-center justify-center transition-all font-bold shadow-sm"
+              title="Next"
+            >
+              ❯
+            </button>
+        </div>
+      )}
+      
+      {/* 2. IMAGE CONTAINER */}
       <div className="relative w-full h-40 rounded-lg overflow-hidden border border-[#dcd1b2] shadow-inner bg-gray-100 group">
-        
-        {/* Image */}
         <img 
           src={processImageUrl(currentSlide.img)} 
           alt={`Slide ${currentIndex + 1}`}
-          className="w-full h-full object-cover transition-transform duration-500"
+          className="w-full h-full object-cover transition-transform duration-500 relative z-0"
           onError={(e) => e.target.src = "https://via.placeholder.com/300x200?text=Image+Error"}
         />
       </div>
 
-      {/* 2. CONTROLS ROW */}
+      {/* 3. CONTROLS ROW */}
       <div className="w-full flex gap-2 items-center justify-center">
-        {/* Upload Button */}
         <label 
           className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-1.5 text-sm font-bold shadow flex items-center gap-2 transition-transform active:scale-95 flex-1 justify-center"
           title="Upload photos from computer"
@@ -202,17 +228,16 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
           <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultipleUpload} />
         </label>
 
-        {/* Delete Slide Button */}
         <button
+          type="button"
           onClick={handleDeleteClick}
-          className="bg-red-500 hover:bg-red-600 text-white rounded px-3 py-1.5 shadow flex items-center justify-center transition-transform active:scale-95"
+          className="bg-red-500 hover:bg-red-600 text-white rounded px-3 py-1.5 shadow flex items-center justify-center transition-transform active:scale-95 z-50"
           title="Remove this photo"
         >
           ❌
         </button>
       </div>
 
-      {/* 3. GOOGLE PHOTOS INSTRUCTION */}
       {isGooglePhotosShare && (
         <div className="text-[9px] text-red-600 bg-red-50 p-2 rounded w-full text-center leading-tight border border-red-100">
           <strong>⚠️ Webpage link detected.</strong><br/>
@@ -220,40 +245,20 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
         </div>
       )}
 
-      {/* 4. CAPTION INPUT WITH NAVIGATION */}
+      {/* 4. CAPTION INPUT */}
       <div className="w-full flex items-center gap-1">
-        {slides.length > 1 && (
-          <button 
-            onClick={prevSlide}
-            className="text-gray-500 hover:text-gray-800 hover:bg-gray-200/50 rounded-full min-w-[24px] h-6 flex items-center justify-center transition-colors font-bold text-lg leading-none pb-1 self-start mt-2"
-            title="Previous"
-          >
-            &lt;
-          </button>
-        )}
-
         <textarea
           ref={textareaRef}
           value={currentSlide.text}
           onChange={(e) => {
             onTextChange(currentIndex, e.target.value);
-            e.target.style.height = 'auto'; // Reset height
-            e.target.style.height = e.target.scrollHeight + 'px'; // Set to scrollHeight
+            e.target.style.height = 'auto'; 
+            e.target.style.height = e.target.scrollHeight + 'px';
           }}
           className="font-hand text-sm font-bold text-center text-gray-800 bg-transparent w-full resize-none focus:outline-none focus:bg-white/50 rounded p-1 border border-transparent focus:border-gray-300 transition-colors flex-1 overflow-hidden"
           rows={1}
           placeholder="Write caption..."
         />
-
-        {slides.length > 1 && (
-          <button 
-            onClick={nextSlide}
-            className="text-gray-500 hover:text-gray-800 hover:bg-gray-200/50 rounded-full min-w-[24px] h-6 flex items-center justify-center transition-colors font-bold text-lg leading-none pb-1 self-start mt-2"
-            title="Next"
-          >
-            &gt;
-          </button>
-        )}
       </div>
       
       {/* 5. DOT INDICATORS */}
@@ -272,18 +277,97 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
 }
 
 // --- The Moving Heart (Animation) ---
-function MovingHeart({ pathStr, ratio }) {
-  if (!pathStr) return null;
-  const cssPath = `path("${pathStr.replace(/\s+/g, " ").trim()}")`;
+function MovingHeart({ pathStr }) {
+  const [renderPath, setRenderPath] = useState(pathStr);
+  const [offset, setOffset] = useState(100);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const prevPathPropRef = useRef(pathStr);
+
+  useEffect(() => {
+    if (!pathStr) return;
+    
+    const prevPath = prevPathPropRef.current;
+    
+    // Helper to measure path length
+    const getLen = (d) => {
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", d);
+      return p.getTotalLength();
+    };
+
+    const currentLen = getLen(pathStr);
+
+    // CASE 1: EXTENDING (Forward)
+    if (prevPath && pathStr.startsWith(prevPath) && pathStr !== prevPath) {
+       const prevLen = getLen(prevPath);
+       const startPerc = (prevLen / currentLen) * 100;
+       
+       setRenderPath(pathStr);
+       setIsTransitioning(false);
+       setOffset(startPerc);
+
+       requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsTransitioning(true);
+          setOffset(100);
+        });
+      });
+    } 
+    // CASE 2: RETRACTING (Backward)
+    else if (prevPath && prevPath.startsWith(pathStr) && pathStr !== prevPath) {
+        const prevLen = getLen(prevPath);
+        const targetPerc = (currentLen / prevLen) * 100;
+
+        // Keep rendering OLD path to animate backward
+        setRenderPath(prevPath);
+        setIsTransitioning(false);
+        setOffset(100);
+
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                setIsTransitioning(true);
+                setOffset(targetPerc);
+            });
+        });
+
+        // After animation, swap to new path
+        const timeoutId = setTimeout(() => {
+            setRenderPath(pathStr);
+            setIsTransitioning(false); 
+            setOffset(100); // 100% of new path == targetPerc of old path
+        }, 1000); 
+
+        prevPathPropRef.current = pathStr;
+        return () => clearTimeout(timeoutId);
+    }
+    // CASE 3: JUMP / RESET
+    else if (prevPath !== pathStr) {
+       setRenderPath(pathStr);
+       setIsTransitioning(false);
+       setOffset(0);
+       
+       requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsTransitioning(true);
+          setOffset(100);
+        });
+      });
+    }
+
+    prevPathPropRef.current = pathStr;
+
+  }, [pathStr]);
+
+  if (!renderPath) return null;
+  const cssPath = `path("${renderPath.replace(/\s+/g, " ").trim()}")`;
 
   return (
     <g
       style={{
         offsetPath: cssPath,
-        offsetDistance: `${ratio * 100}%`,
-        willChange: "offset-distance", 
-        transition: "offset-distance 1.2s cubic-bezier(0.25, 1, 0.5, 1)", 
-        offsetRotate: "0deg", 
+        offsetDistance: `${offset}%`,
+        transition: isTransitioning ? "offset-distance 1s ease-in-out" : "none",
+        willChange: "offset-distance",
       }}
     >
       <path
@@ -316,17 +400,47 @@ function Heart({ x, y, active, selected }) {
    3. THE TIMELINE EDITOR (Main Logic)
    ========================================= */
 
-function TimelineEditor({ initialNodes, onExit }) {
-  const [nodes, setNodes] = useState(initialNodes || []);
+function TimelineEditor({ initialData, onExit }) {
+  // Normalize nodes on init: Ensure everyone has a parentId if loading old files
+  const normalizedNodes = useMemo(() => {
+    let raw = initialData.nodes || [];
+    if (raw.length === 0) return [];
+    
+    // Map existing linear structure to parent-child if parentId is missing
+    return raw.map((node, index) => {
+        if (node.parentId !== undefined) return node;
+        // Migration logic: Parent is the previous node in array, unless it's the first node
+        return {
+            ...node,
+            parentId: index === 0 ? null : raw[index - 1].id
+        };
+    });
+  }, [initialData]);
+
+  const [nodes, setNodes] = useState(normalizedNodes);
+  const [music, setMusic] = useState(initialData.music || "");
+
   const [selectedId, setSelectedId] = useState(nodes.length > 0 ? nodes[0].id : null);
-  const [isAdding, setIsAdding] = useState(false);
+  
+  // addingMode: null (none), 'sequence' (main button), 'branch' (branch button)
+  const [addingMode, setAddingMode] = useState(null); 
+  const [branchOriginId, setBranchOriginId] = useState(null);
+
   const [btnPos, setBtnPos] = useState({ x: 0, y: 0, align: 'left' });
   const svgRef = useRef(null);
-
-  // --- POPUP POSITION STATE ---
   const [popupPlacement, setPopupPlacement] = useState({ vertical: 'top', xOffset: 0 });
 
-  // --- CALCULATE DYNAMIC POPUP POSITION ---
+  // Update button position for the "Main" add button (tracks last added node)
+  useEffect(() => {
+    if (nodes.length > 0) {
+      const last = nodes[nodes.length - 1]; // Simply track the chronologically last added
+      const rect = svgRef.current?.getBoundingClientRect();
+      const isRightSide = last.x > (rect ? rect.width / 2 : 500); 
+      setBtnPos({ x: last.x, y: last.y, align: isRightSide ? 'left' : 'right' });
+    }
+  }, [nodes]);
+
+  // Calculate popup position
   useEffect(() => {
     if (!selectedId) return;
     const el = document.getElementById(`node-${selectedId}`);
@@ -335,10 +449,8 @@ function TimelineEditor({ initialNodes, onExit }) {
     const rect = el.getBoundingClientRect();
     const popupWidth = 320; 
     
-    // 1. Vertical Logic (Viewport-aware)
     const newVertical = (rect.top < 300) ? 'bottom' : 'top';
     
-    // 2. Horizontal Logic (Viewport-aware)
     let xOffset = 0;
     const halfWidth = popupWidth / 2;
     const distToLeft = rect.left;
@@ -353,10 +465,11 @@ function TimelineEditor({ initialNodes, onExit }) {
     setPopupPlacement({ vertical: newVertical, xOffset });
   }, [selectedId]); 
 
-  // --- SAVE ---
+  // --- ACTIONS ---
   const saveTimeline = () => {
     if (nodes.length === 0) return alert("Nothing to save yet!");
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(nodes));
+    const payload = { nodes, music };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
     downloadAnchorNode.setAttribute("download", `timeline_${Date.now()}.json`);
@@ -365,10 +478,13 @@ function TimelineEditor({ initialNodes, onExit }) {
     downloadAnchorNode.remove();
   };
 
-  // --- ACTIONS ---
   const deleteNode = (id) => {
-    if (window.confirm("Are you sure you want to delete this checkpoint?")) {
-      setNodes(prev => prev.map(n => n.id === id ? { ...n, isHidden: true } : n));
+    if (window.confirm("Delete this checkpoint? (Children nodes will detach)")) {
+      setNodes(prev => prev.filter(n => n.id !== id).map(n => {
+        // If we delete a parent, its children become orphans (start of new lines)
+        if (n.parentId === id) return { ...n, parentId: null };
+        return n;
+      }));
       setSelectedId(null);
     }
   };
@@ -401,7 +517,6 @@ function TimelineEditor({ initialNodes, onExit }) {
   const deleteSlide = (nodeId, slideIndex) => {
     setNodes(prev => prev.map(n => {
       if (n.id === nodeId) {
-        // Updated logic: if removing last image, revert to placeholder
         const remaining = n.slides.filter((_, i) => i !== slideIndex);
         if (remaining.length === 0) {
            return { ...n, slides: [{ text: "New Note", img: "https://via.placeholder.com/300x200?text=Text+Only" }] };
@@ -412,55 +527,88 @@ function TimelineEditor({ initialNodes, onExit }) {
     }));
   };
 
-  // --- PATH & LAYOUT ---
-  const fullPathString = useMemo(() => {
-    if (nodes.length < 2) return "";
-    let d = `M ${nodes[0].x} ${nodes[0].y}`;
-    for (let i = 1; i < nodes.length; i++) {
-      d += " " + generateSegment(nodes[i - 1], nodes[i]);
+  // --- BRANCHING & PATH LOGIC ---
+
+  // 1. Generate path for the Moving Heart (Root -> Selected Node)
+  const activePathString = useMemo(() => {
+    if (!selectedId || nodes.length < 2) return "";
+    
+    // Backtrack from selected node to a root (null parent)
+    const pathNodes = [];
+    let current = nodes.find(n => n.id === selectedId);
+    
+    while (current) {
+        pathNodes.unshift(current);
+        if (!current.parentId) break;
+        current = nodes.find(n => n.id === current.parentId);
+    }
+
+    if (pathNodes.length < 2) return "";
+
+    // Build path string
+    let d = `M ${pathNodes[0].x} ${pathNodes[0].y}`;
+    for (let i = 1; i < pathNodes.length; i++) {
+        d += " " + generateSegment(pathNodes[i - 1], pathNodes[i]);
     }
     return d;
-  }, [nodes]);
 
-  const progressRatio = useMemo(() => {
-    if (nodes.length < 2 || !selectedId) return 0;
-    let totalLength = 0;
-    let targetLength = 0;
-    for (let i = 1; i < nodes.length; i++) {
-      const segLen = getDistance(nodes[i-1], nodes[i]);
-      totalLength += segLen;
-      if (nodes.findIndex(n => n.id === selectedId) >= i) {
-         targetLength += segLen;
-      }
-    }
-    if (totalLength === 0) return 0;
-    if (nodes[0].id === selectedId) return 0;
-    return targetLength / totalLength;
   }, [nodes, selectedId]);
 
-  const lastNode = nodes.length > 0 ? nodes[nodes.length - 1] : { y: 100 };
-  const canvasHeight = Math.max(window.innerHeight - 300, lastNode.y + 500);
+  // 2. Generate all line segments for the background
+  const lineSegments = useMemo(() => {
+      return nodes.map(node => {
+          if (!node.parentId) return null;
+          const parent = nodes.find(n => n.id === node.parentId);
+          if (!parent) return null; // Orphan or root
+          return (
+            <path
+                key={`path-${node.id}`}
+                d={`M ${parent.x} ${parent.y} ${generateSegment(parent, node)}`}
+                fill="none"
+                stroke="#5c4b4b"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray="8 6"
+                className="opacity-60"
+            />
+          );
+      });
+  }, [nodes]);
 
+  // Handle Adding Nodes (Sequence or Branch)
   const handleCanvasClick = (e) => {
-    if (!isAdding) return;
+    if (!addingMode) {
+      setSelectedId(null);
+      return;
+    }
+
     const rect = svgRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
     if (x < 10 || x > rect.width - 10) return alert("Too close to edge!");
-    if (nodes.length > 0) {
-      if (y <= lastNode.y + 20) {
-        return alert("Please click lower down to maintain timeline flow.");
-      }
-    }
 
     const isFirst = nodes.length === 0;
-    const defaultLabel = isFirst ? "Start" : `Step ${nodes.length + 1}`;
+    
+    // Determine parent: 
+    // If First node -> null
+    // If Branching -> branchOriginId
+    // If Sequence -> Last added node (default behavior)
+    let parentId = null;
+    if (!isFirst) {
+        if (addingMode === 'branch' && branchOriginId) {
+            parentId = branchOriginId;
+        } else {
+            // Default: attach to last node created (linear flow)
+            parentId = nodes[nodes.length - 1].id;
+        }
+    }
 
     const newNode = {
       id: Date.now(),
       x, y,
-      label: defaultLabel,
+      parentId: parentId,
+      label: isFirst ? "Start" : (addingMode === 'branch' ? "New Branch" : `Step ${nodes.length + 1}`),
       status: "completed",
       slides: [
         { 
@@ -471,20 +619,25 @@ function TimelineEditor({ initialNodes, onExit }) {
     };
 
     setNodes([...nodes, newNode]);
-    setIsAdding(false);
-    setSelectedId(newNode.id); 
     
-    const isRightSide = x > (rect.width / 2);
-    setBtnPos({ x, y, align: isRightSide ? 'left' : 'right' });
+    // Reset States
+    setAddingMode(null);
+    setBranchOriginId(null);
+    setSelectedId(newNode.id); 
   };
 
-  useEffect(() => {
-    if (nodes.length > 0) {
-      const last = nodes[nodes.length - 1];
-      const isRightSide = last.x > (svgRef.current?.getBoundingClientRect().width / 2); 
-      setBtnPos({ x: last.x, y: last.y, align: isRightSide ? 'left' : 'right' });
-    }
-  }, [nodes]);
+  const startBranching = (fromId) => {
+      setBranchOriginId(fromId);
+      setAddingMode('branch');
+      // Keep selected ID so popup might stay or close? Let's close it to show cursor
+      setSelectedId(null); 
+  };
+
+  const lastNode = nodes.length > 0 ? nodes.reduce((prev, current) => (prev.y > current.y) ? prev : current) : { y: 100 };
+  const rightMostNode = nodes.length > 0 ? nodes.reduce((prev, current) => (prev.x > current.x) ? prev : current) : { x: 0 };
+  
+  const canvasHeight = Math.max(window.innerHeight - 100, lastNode.y + 500);
+  const canvasWidth = Math.max(window.innerWidth, rightMostNode.x + 500);
 
   const selectedNode = nodes.find(n => n.id === selectedId);
   const isTimelineEmpty = nodes.length === 0;
@@ -496,47 +649,63 @@ function TimelineEditor({ initialNodes, onExit }) {
     : `translate(calc(-50% + ${popupPlacement.xOffset}px), -135%)`;
 
   return (
-    <div className="relative w-full h-screen bg-[#ffe4e1] overflow-y-auto cursor-default">
+    <div className={`relative w-full h-screen bg-[#ffe4e1] overflow-auto ${addingMode ? 'cursor-crosshair' : 'cursor-default'}`}>
       
       {/* --- TOP BAR (Fixed) --- */}
       <div className="fixed top-0 left-0 w-full bg-white/95 backdrop-blur-md py-4 px-10 md:px-20 lg:px-48 flex justify-between items-center z-[100] shadow-sm">
-        <button 
-          onClick={onExit}
-          className="text-gray-600 font-hand font-bold text-lg hover:text-red-500 flex items-center gap-2 px-3 py-1 rounded hover:bg-gray-100 transition-colors"
-        >
-          ← Exit
-        </button>
+        <div className="flex-1 flex justify-start">
+          <button 
+            onClick={onExit}
+            className="text-gray-600 font-hand font-bold text-lg hover:text-red-500 flex items-center gap-2 px-3 py-1 rounded hover:bg-gray-100 transition-colors"
+          >
+            ← Exit
+          </button>
+        </div>
         
-        <MusicPlayer />
+        <div className="flex-none">
+          <MusicPlayer currentSrc={music} onMusicUpload={setMusic} />
+        </div>
 
-        <button 
-          onClick={saveTimeline}
-          className="bg-gray-800 text-white px-5 py-2 rounded-lg font-hand font-bold shadow hover:bg-black transition-all flex gap-2 items-center hover:scale-105"
-        >
-          <span>💾</span> Save
-        </button>
+        <div className="flex-1 flex justify-end">
+          <button 
+            onClick={saveTimeline}
+            className="bg-gray-800 text-white px-5 py-2 rounded-lg font-hand font-bold shadow hover:bg-black transition-all flex gap-2 items-center hover:scale-105"
+          >
+            <span>💾</span> Save
+          </button>
+        </div>
       </div>
 
-      <div className="w-full flex flex-col items-center min-h-screen pt-32 pb-20 gap-8">
+      <div className="w-full min-w-fit flex flex-col items-center min-h-screen pt-24 pb-20 gap-8">
         
-        <div className="max-w-2xl w-full text-center px-4">
+        <div className="max-w-4xl w-full text-center px-4 sticky left-0 right-0">
           <p className="text-gray-400 font-hand text-xl">
             {isTimelineEmpty 
               ? "Your journey is waiting to begin..." 
-              : isAdding 
-                ? "👇 Click anywhere on the parchment to place point" 
-                : "Add checkpoints or click hearts to edit"}
+              : addingMode === 'branch'
+              ? "🌿 Branching Mode: Click anywhere to start a new path!"
+              : addingMode === 'sequence'
+                ? "👇 Click anywhere to place next checkpoint" 
+                : null}
           </p>
+          {addingMode && (
+              <button 
+                onClick={() => setAddingMode(null)}
+                className="mt-2 text-sm bg-red-100 text-red-600 px-3 py-1 rounded-full font-bold hover:bg-red-200"
+              >
+                  Cancel Placing
+              </button>
+          )}
         </div>
 
-        {/* --- TIMELINE CONTAINER (Removed box styling) --- */}
+        {/* --- TIMELINE CONTAINER --- */}
         <div 
-          className="relative w-full max-w-2xl mt-12"
-          style={{ height: canvasHeight }}
+          className="relative mt-4"
+          style={{ height: canvasHeight, width: canvasWidth }}
         >
-          <div className="relative w-[90%] mx-auto h-full">
+          <div className="relative w-full h-full">
 
-            {/* ADD BUTTON */}
+            {/* MAIN ADD BUTTON (Floating) */}
             <div 
               className="absolute z-50 transition-all duration-500 ease-out"
               style={{
@@ -550,16 +719,16 @@ function TimelineEditor({ initialNodes, onExit }) {
               }}
             >
               <button
-                onClick={(e) => { e.stopPropagation(); setIsAdding(!isAdding); }}
+                onClick={(e) => { e.stopPropagation(); setAddingMode(addingMode ? null : 'sequence'); }}
                 className={`rounded-full font-hand font-bold shadow-xl whitespace-nowrap transition-all border-2 border-white/50 ${
                   isTimelineEmpty
                     ? "px-8 py-4 text-xl bg-green-600 text-white hover:bg-green-700 animate-bounce hover:scale-110"
-                    : isAdding 
+                    : addingMode === 'sequence'
                       ? "px-5 py-2 text-sm bg-[#ef4444] text-white animate-pulse ring-4 ring-red-200 scale-105" 
                       : "px-5 py-2 text-sm bg-[#3b82f6] text-white hover:bg-blue-600 hover:scale-105"
                 }`}
               >
-                {isAdding 
+                {addingMode === 'sequence'
                   ? "Click on Parchment..." 
                   : isTimelineEmpty 
                     ? "📍 Start Journey Here" 
@@ -572,7 +741,7 @@ function TimelineEditor({ initialNodes, onExit }) {
               ref={svgRef}
               width="100%"
               height={canvasHeight}
-              className={`transition-colors duration-300 rounded-lg ${isAdding ? "cursor-crosshair bg-[#f2e8cf]/90" : "bg-[#f2e8cf]"}`}
+              className={`transition-colors duration-300 rounded-lg ${addingMode ? "bg-[#f2e8cf]/90 ring-4 ring-blue-200" : "bg-[#f2e8cf]"}`}
               onClick={handleCanvasClick}
             >
               {/* Background Pattern */}
@@ -587,35 +756,23 @@ function TimelineEditor({ initialNodes, onExit }) {
               </defs>
               <rect x="0" y="0" width="100%" height="100%" fill="url(#heart-pattern)" pointerEvents="none" />
 
-              {nodes.length > 1 && (
-                <path
-                  d={fullPathString}
-                  fill="none"
-                  stroke="#5c4b4b"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray="8 6"
-                  // className="opacity-40"
-                />
-              )}
+              {/* RENDER ALL LINES (BRANCHES) */}
+              {lineSegments}
 
-              {nodes.length > 1 && (
-                <MovingHeart pathStr={fullPathString} ratio={progressRatio} />
-              )}
+              {/* MOVING HEART - Follows path to selected node */}
+              <MovingHeart pathStr={activePathString} />
 
-              {nodes.map((node) => {
-                if (node.isHidden) return null;
-                return (
+              {nodes.map((node) => (
                   <g 
                     key={node.id} 
                     id={`node-${node.id}`} 
                     className="cursor-pointer group"
-                    onClick={(e) => { e.stopPropagation(); setSelectedId(node.id); }}
+                    onClick={(e) => { e.stopPropagation(); setSelectedId(node.id); setAddingMode(null); }}
                   >
                     <Heart 
                       x={node.x} 
                       y={node.y} 
-                      active={node.status === "completed"} 
+                      active={true} 
                       selected={selectedId === node.id} 
                     />
                     <text
@@ -628,12 +785,11 @@ function TimelineEditor({ initialNodes, onExit }) {
                       {node.label}
                     </text>
                   </g>
-                );
-              })}
+                ))}
             </svg>
 
             {/* Popup Logic */}
-            {selectedNode && (
+            {selectedNode && !addingMode && (
               <div
                 className={`absolute parchment-box z-10 ${isPopBottom ? 'pop-bottom' : 'pop-top'}`}
                 style={{
@@ -642,7 +798,7 @@ function TimelineEditor({ initialNodes, onExit }) {
                   transform: popupTranslate, 
                 }}
               >
-                {/* Header Row: Title Input + Delete Button */}
+                {/* Header Row: Title Input + Actions */}
                 <div className="flex items-center gap-2 mb-2 border-b border-[#dcd1b2] pb-1">
                   <input
                     type="text"
@@ -651,13 +807,22 @@ function TimelineEditor({ initialNodes, onExit }) {
                     className="font-hand text-xl font-bold text-center text-[#5c4b4b] bg-transparent w-full focus:outline-none focus:border-[#5c4b4b] placeholder-gray-400"
                     placeholder="Enter Title..."
                   />
-                  <button 
-                    onClick={() => deleteNode(selectedNode.id)}
-                    className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded-full transition-colors"
-                    title="Delete Checkpoint"
-                  >
-                    🗑️
-                  </button>
+                  <div className="flex gap-1">
+                    <button 
+                        onClick={() => startBranching(selectedNode.id)}
+                        className="text-blue-500 hover:text-white hover:bg-blue-500 p-1 rounded transition-colors"
+                        title="Start New Timeline Branch Here"
+                    >
+                        🔀
+                    </button>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); deleteNode(selectedNode.id); }}
+                        className="text-gray-400 hover:text-white hover:bg-red-500 p-1 rounded transition-colors"
+                        title="Delete Checkpoint"
+                    >
+                        🗑️
+                    </button>
+                  </div>
                 </div>
                 
                 {/* SLIDES WITH EDITABLE TEXT */}
@@ -708,7 +873,11 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const loadedNodes = JSON.parse(e.target.result);
-        setTimelineData(loadedNodes);
+        if (Array.isArray(loadedNodes)) {
+           setTimelineData({ nodes: loadedNodes, music: "" });
+        } else {
+           setTimelineData(loadedNodes);
+        }
         setView('editor');
       } catch (err) {
         alert("Error loading file. Please ensure it is a valid JSON timeline.");
@@ -718,7 +887,7 @@ export default function App() {
   };
 
   if (view === 'editor') {
-    return <TimelineEditor key={Date.now()} initialNodes={timelineData} onExit={() => setView('home')} />;
+    return <TimelineEditor key={Date.now()} initialData={timelineData} onExit={() => setView('home')} />;
   }
 
   return (
