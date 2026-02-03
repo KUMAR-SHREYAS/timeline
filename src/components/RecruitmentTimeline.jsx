@@ -753,7 +753,7 @@ function TimelineEditor({ initialData, onExit }) {
                 strokeWidth="4"
                 strokeLinecap="round"
                 strokeDasharray="8 6"
-                className="opacity-60"
+                // className="opacity-60"
             />
           );
       });
@@ -932,16 +932,16 @@ function TimelineEditor({ initialData, onExit }) {
               ref={svgRef}
               width="100%"
               height={canvasHeight}
-              className={`transition-colors duration-300 rounded-lg ${addingMode ? "bg-[#f2e8cf]/90 ring-4 ring-blue-200" : "bg-[#f2e8cf]"}`}
+              className={`transition-colors duration-300 rounded-lg ${addingMode ? "bg-[#ffe8cf]/90 ring-4 ring-blue-200" : "bg-[#f2e8cf]"}`}
               onClick={handleCanvasClick}
             >
               {/* Background Pattern */}
               <defs>
                 <pattern id="heart-pattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
                   <text x="10" y="30" fontSize="20" opacity="0.6" transform="rotate(-10 10 30)">🌸</text>
-                  <text x="60" y="20" fontSize="12" opacity="0.5" transform="rotate(20 60 20)">🌺</text>
+                  <text x="60" y="20" fontSize="15" opacity="0.7" transform="rotate(20 60 20)">🌻</text>
                   <text x="30" y="80" fontSize="16" opacity="1" transform="rotate(5 30 80)">🌼</text>
-                  <text x="80" y="70" fontSize="24" opacity="0.6" transform="rotate(-20 80 70)">🌻</text>
+                  <text x="80" y="70" fontSize="12" opacity="0.6" transform="rotate(-20 80 70)">🌷</text>
                   <text x="50" y="50" fontSize="10" opacity="1">🌹</text>
                 </pattern>
               </defs>
