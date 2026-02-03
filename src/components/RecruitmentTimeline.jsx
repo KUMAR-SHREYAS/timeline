@@ -41,6 +41,65 @@ const processImageUrl = (url) => {
    2. SUB-COMPONENTS
    ========================================= */
 
+// --- Music Player Component ---
+function MusicPlayer() {
+  const audioRef = useRef(null);
+  const [src, setSrc] = useState(() => localStorage.getItem("timelineSong") || "");
+  const [playing, setPlaying] = useState(false);
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+
+    if (playing) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setPlaying(!playing);
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const url = URL.createObjectURL(file);
+    setSrc(url);
+    // Note: This URL is specific to this session and browser window
+    localStorage.setItem("timelineSong", url);
+    setPlaying(false);
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      {src && (
+        <button
+          onClick={togglePlay}
+          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-hand shadow transition flex items-center gap-2"
+        >
+          {playing ? "⏸ Pause" : "▶ Play Song"}
+        </button>
+      )}
+
+      <label className="cursor-pointer bg-gray-200 hover:bg-gray-300 px-3 py-2 rounded-lg font-hand text-sm flex items-center gap-2 text-gray-700">
+        <span>🎵</span>
+        <span className="hidden sm:inline">Choose Song</span>
+        <input
+          type="file"
+          accept="audio/*, video/mp4"
+          className="hidden"
+          onChange={handleFile}
+        />
+      </label>
+
+      <audio
+        ref={audioRef}
+        src={src}
+        onEnded={() => setPlaying(false)}
+      />
+    </div>
+  );
+}
+
 // --- Image Slider Popup ---
 function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -130,19 +189,6 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
           className="w-full h-full object-cover transition-transform duration-500"
           onError={(e) => e.target.src = "https://via.placeholder.com/300x200?text=Image+Error"}
         />
-
-        
-
-        {/* Delete Slide Button (Updated with SVG for visibility) */}
-        <button
-          onClick={handleDeleteClick}
-          className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg z-50 font-bold border-2 border-white transition-transform hover:scale-110 cursor-pointer"
-          title="Remove this photo"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
       </div>
 
       {/* 2. CONTROLS ROW */}
@@ -155,6 +201,15 @@ function ImageSlider({ slides, onTextChange, onAddImages, onDeleteSlide }) {
           <span>📂+</span>
           <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultipleUpload} />
         </label>
+
+        {/* Delete Slide Button */}
+        <button
+          onClick={handleDeleteClick}
+          className="bg-red-500 hover:bg-red-600 text-white rounded px-3 py-1.5 shadow flex items-center justify-center transition-transform active:scale-95"
+          title="Remove this photo"
+        >
+          ❌
+        </button>
       </div>
 
       {/* 3. GOOGLE PHOTOS INSTRUCTION */}
@@ -233,7 +288,7 @@ function MovingHeart({ pathStr, ratio }) {
     >
       <path
         d="M12 21s-6.7-4.35-9.5-8.28C.6 9.7 2.1 6 5.6 6c2 0 3.2 1.2 3.9 2.3C10.2 7.2 11.4 6 13.4 6c3.5 0 5 3.7 3.1 6.7C18.7 16.65 12 21 12 21z"
-        fill="#dc2626"
+        fill="#db2777"
         transform="translate(-24, -24) scale(2.0)"
         filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.3))"
       />
@@ -247,7 +302,7 @@ function Heart({ x, y, active, selected }) {
     <g transform={`translate(${x - 24},${y - 24})`}> 
       <path
         d="M12 21s-6.7-4.35-9.5-8.28C.6 9.7 2.1 6 5.6 6c2 0 3.2 1.2 3.9 2.3C10.2 7.2 11.4 6 13.4 6c3.5 0 5 3.7 3.1 6.7C18.7 16.65 12 21 12 21z"
-        fill={active ? "#ef4444" : "#9ca3af"}
+        fill={active ? "#ec4899" : "#9ca3af"}
         className={`transition-transform duration-300 origin-center ${
           selected ? "scale-[2.3] stroke-2 stroke-black/10" : "scale-[2.0] hover:scale-[2.15]"
         }`}
@@ -278,24 +333,20 @@ function TimelineEditor({ initialNodes, onExit }) {
     if (!el) return;
     
     const rect = el.getBoundingClientRect();
-    const popupWidth = 320; // Updated Width
+    const popupWidth = 320; 
     
     // 1. Vertical Logic (Viewport-aware)
-    // If < 300px from top of screen, show below. Otherwise show above.
     const newVertical = (rect.top < 300) ? 'bottom' : 'top';
     
     // 2. Horizontal Logic (Viewport-aware)
-    // Keep the box fully on screen
     let xOffset = 0;
     const halfWidth = popupWidth / 2;
     const distToLeft = rect.left;
     const distToRight = window.innerWidth - rect.right;
 
     if (distToLeft < halfWidth) {
-      // Too close to left edge, push right
-      xOffset = halfWidth - distToLeft + 10; // 10px buffer
+      xOffset = halfWidth - distToLeft + 10; 
     } else if (distToRight < halfWidth) {
-      // Too close to right edge, push left
       xOffset = -(halfWidth - distToRight + 10);
     }
     
@@ -350,7 +401,7 @@ function TimelineEditor({ initialNodes, onExit }) {
   const deleteSlide = (nodeId, slideIndex) => {
     setNodes(prev => prev.map(n => {
       if (n.id === nodeId) {
-        // Updated logic: if removing last image, revert to placeholder instead of deleting slide object entirely if count is 1
+        // Updated logic: if removing last image, revert to placeholder
         const remaining = n.slides.filter((_, i) => i !== slideIndex);
         if (remaining.length === 0) {
            return { ...n, slides: [{ text: "New Note", img: "https://via.placeholder.com/300x200?text=Text+Only" }] };
@@ -404,15 +455,17 @@ function TimelineEditor({ initialNodes, onExit }) {
     }
 
     const isFirst = nodes.length === 0;
+    const defaultLabel = isFirst ? "Start" : `Step ${nodes.length + 1}`;
+
     const newNode = {
       id: Date.now(),
       x, y,
-      label: isFirst ? "Start" : `Step ${nodes.length + 1}`,
+      label: defaultLabel,
       status: "completed",
       slides: [
         { 
           text: isFirst ? "Journey Begins! 🚀" : "New Milestone 🚩", 
-          img: `https://picsum.photos/id/${(nodes.length + 1) * 11}/300/200` 
+          img: "https://via.placeholder.com/300x200?text=Text+Only" 
         }
       ]
     };
@@ -443,7 +496,7 @@ function TimelineEditor({ initialNodes, onExit }) {
     : `translate(calc(-50% + ${popupPlacement.xOffset}px), -135%)`;
 
   return (
-    <div className="relative w-full h-screen bg-[#fafaf9] overflow-y-auto cursor-default">
+    <div className="relative w-full h-screen bg-[#ffe4e1] overflow-y-auto cursor-default">
       
       {/* --- TOP BAR (Fixed) --- */}
       <div className="fixed top-0 left-0 w-full bg-white/95 backdrop-blur-md py-4 px-10 md:px-20 lg:px-48 flex justify-between items-center z-[100] shadow-sm">
@@ -454,6 +507,8 @@ function TimelineEditor({ initialNodes, onExit }) {
           ← Exit
         </button>
         
+        <MusicPlayer />
+
         <button 
           onClick={saveTimeline}
           className="bg-gray-800 text-white px-5 py-2 rounded-lg font-hand font-bold shadow hover:bg-black transition-all flex gap-2 items-center hover:scale-105"
@@ -462,7 +517,6 @@ function TimelineEditor({ initialNodes, onExit }) {
         </button>
       </div>
 
-      {/* --- MAIN SCROLLABLE AREA --- */}
       <div className="w-full flex flex-col items-center min-h-screen pt-32 pb-20 gap-8">
         
         <div className="max-w-2xl w-full text-center px-4">
@@ -480,7 +534,6 @@ function TimelineEditor({ initialNodes, onExit }) {
           className="relative w-full max-w-2xl mt-12"
           style={{ height: canvasHeight }}
         >
-          
           <div className="relative w-[90%] mx-auto h-full">
 
             {/* ADD BUTTON */}
@@ -524,8 +577,12 @@ function TimelineEditor({ initialNodes, onExit }) {
             >
               {/* Background Pattern */}
               <defs>
-                <pattern id="heart-pattern" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-                  <text x="0" y="10" fontSize="8" opacity="0.15" transform="rotate(-15)">❤️</text>
+                <pattern id="heart-pattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
+                  <text x="10" y="30" fontSize="20" opacity="0.6" transform="rotate(-10 10 30)">🌸</text>
+                  <text x="60" y="20" fontSize="12" opacity="0.5" transform="rotate(20 60 20)">🌺</text>
+                  <text x="30" y="80" fontSize="16" opacity="1" transform="rotate(5 30 80)">🌼</text>
+                  <text x="80" y="70" fontSize="24" opacity="0.6" transform="rotate(-20 80 70)">🌻</text>
+                  <text x="50" y="50" fontSize="10" opacity="1">🌹</text>
                 </pattern>
               </defs>
               <rect x="0" y="0" width="100%" height="100%" fill="url(#heart-pattern)" pointerEvents="none" />
@@ -538,7 +595,7 @@ function TimelineEditor({ initialNodes, onExit }) {
                   strokeWidth="4"
                   strokeLinecap="round"
                   strokeDasharray="8 6"
-                  className="opacity-40"
+                  // className="opacity-40"
                 />
               )}
 
@@ -547,13 +604,11 @@ function TimelineEditor({ initialNodes, onExit }) {
               )}
 
               {nodes.map((node) => {
-                // Skip rendering visual elements if hidden, but keep node for path logic
                 if (node.isHidden) return null;
-                
                 return (
                   <g 
                     key={node.id} 
-                    id={`node-${node.id}`} // Used for getBoundingClientRect
+                    id={`node-${node.id}`} 
                     className="cursor-pointer group"
                     onClick={(e) => { e.stopPropagation(); setSelectedId(node.id); }}
                   >
@@ -563,7 +618,6 @@ function TimelineEditor({ initialNodes, onExit }) {
                       active={node.status === "completed"} 
                       selected={selectedId === node.id} 
                     />
-                    {/* Text Label */}
                     <text
                       x={node.x}
                       y={node.y - 35} 
@@ -668,7 +722,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fafaf9] flex flex-col items-center justify-center p-6 text-center">
+    <div className="min-h-screen bg-[#ffe4e1] flex flex-col items-center justify-center p-6 text-center">
       <div className="max-w-3xl w-full">
         <h1 className="text-6xl font-hand font-bold text-gray-800 mb-4 tracking-tight">Timeline Maker</h1>
         <p className="text-gray-500 font-hand text-2xl mb-16">
@@ -718,8 +772,8 @@ export default function App() {
         }
 
         @keyframes popTop {
-          0% { opacity: 0; transform: translate(-50%, -110%) scale(0.8); }
-          100% { opacity: 1; transform: translate(-50%, -135%) scale(1); }
+          0% { opacity: 0; }
+          100% { opacity: 1; }
         }
         .pop-top {
           animation: popTop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
@@ -727,8 +781,8 @@ export default function App() {
         }
 
         @keyframes popBottom {
-          0% { opacity: 0; transform: translate(-50%, 10px) scale(0.8); }
-          100% { opacity: 1; transform: translate(-50%, 30px) scale(1); }
+          0% { opacity: 0; }
+          100% { opacity: 1; }
         }
         .pop-bottom {
           animation: popBottom 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
